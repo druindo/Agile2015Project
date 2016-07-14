@@ -3,11 +3,14 @@ using System.Collections;
 
 public class movement : MonoBehaviour {
 
+	//by Victor. Needs way to get out of being pinned between a single enemy and a wall.
+	//			 Any overlap with an enemy will break the game. Need to find a fix.
+
 	public float pMoveDist = 2.5f;
 	public float pSpeed = 6f;
 	public float pDistCheck = 0.02f;
 
-	public ParticleSystem teleportEffect;
+	public GameObject teleportEffect;
 	Renderer render;
 
 	[Tooltip("horizontal movement amount by axis")]
@@ -27,7 +30,9 @@ public class movement : MonoBehaviour {
 	public bool canPhase = false;
 	//checks if they are in the start of a move sequence for teleport effect.
 	bool startMove = false;
-	float whereToFace;
+	//float whereToFace;
+
+    AttackScript attackScript;
 
 	// Use this for initialization
 	void Start () {
@@ -36,6 +41,7 @@ public class movement : MonoBehaviour {
 		currentlyMoving = false;
 		
 		targetLocation = startLocation = transform.position;
+        attackScript = GetComponent<AttackScript>();
 	}
 	
 	// Update is called once per frame
@@ -45,7 +51,7 @@ public class movement : MonoBehaviour {
 		{
 			TeleLerp ();
 		} 
-		else if(horzMove != 0 || vertMove != 0) // !currentlyMoving
+		else if((horzMove != 0 || vertMove != 0) && attackScript.isAttacking == false) // !currentlyMoving
 		{
 			SetTeleLerpPoint();
 		}
@@ -103,9 +109,10 @@ public class movement : MonoBehaviour {
 		//start particle effect of begin teleport at point
 		if (startMove) {
 			startMove = false;
-			ParticleSystem newBamf = (ParticleSystem) Instantiate(teleportEffect, 
-			                                                      transform.position, 
-			                                                      Quaternion.Euler(0,0,0));
+			GameObject newBamf = //(ParticleSystem) 
+                                 Instantiate(teleportEffect, 
+			                     transform.position, 
+			                     Quaternion.Euler(45f,45f,45f)) as GameObject;
             //turn character invisible
 			render.enabled = false;
             //find direction to face
@@ -116,18 +123,29 @@ public class movement : MonoBehaviour {
 		float distCovered = (Time.time - startMoveTime) * pSpeed;
 		float fracJourney = distCovered / moveLength;
 		Vector3 checkedLerp = Vector3.Lerp(startLocation, targetLocation, fracJourney);
-        if (CheckLerpPoint(checkedLerp))
-            transform.position = Vector3.Lerp(startLocation, targetLocation, fracJourney);
+        if (CheckLerpPoint (checkedLerp)) 
+		{
+			transform.position = Vector3.Lerp (startLocation, targetLocation, fracJourney);
+		}
         else
-            targetLocation = transform.position;
-
+		{
+			if(InLegalLocation(transform.position))
+			{
+            	targetLocation = transform.position;
+			}
+			else
+			{
+				SnapToLegalSimple();
+			}
+		}
 		//if character ends movement...
 		//enable view of player AND 
 		//start particle effect of end teleport at point
 		if (transform.position == targetLocation) {
-			ParticleSystem newBamf = (ParticleSystem)Instantiate(teleportEffect,
-			                                                     transform.position,
-			                                                     Quaternion.Euler(0,0,0));
+			GameObject newBamf = //(ParticleSystem)
+                                 Instantiate(teleportEffect,
+			                     transform.position,
+			                     Quaternion.Euler(45f,45f,45f)) as GameObject;
 			render.enabled = true;
             currentlyMoving = false;
 		}
@@ -154,7 +172,7 @@ public class movement : MonoBehaviour {
 		{
 			foreach(Collider hit in hitColliders)
 			{
-				if(hit.tag == "OutOfBounds" || hit.tag == "Enemy")
+				if(hit.tag == "OutOfBounds" || hit.tag == "Enemy" || hit.tag == "Barrier")
 				{
 					canPhase = false;
 				}
@@ -174,7 +192,12 @@ public class movement : MonoBehaviour {
         {
             if (hit.tag == "Enemy" || hit.tag == "Barrier")
             {
-                Debug.Log("Attack!");
+                Debug.Log("Stop");
+				//check if going to spawn in a legal location
+				if(InLegalLocation(transform.position) && hit.tag == "Enemy")
+                {
+                    attackScript.CallAttack();
+                }
                 return false;
             }
         }
@@ -191,4 +214,33 @@ public class movement : MonoBehaviour {
         }
         return true;
     }
+
+	bool InLegalLocation(Vector3 locPosition)
+	{
+		float checkRadius = GetComponent<CapsuleCollider>().radius;
+		Collider[] hitColliders = Physics.OverlapSphere (locPosition, checkRadius);
+		foreach (Collider hit in hitColliders) 
+		{
+			if(hit.tag == "OutOfBounds" || hit.tag == "Enemy" || hit.tag == "Barrier")
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	void SnapToLegalSimple()
+	{
+		Vector3 startPos = transform.position;
+		Vector3 endPos = startLocation;
+		Vector3 newPos;
+		float adjustIncrement = 0.05f;
+		float adjust = adjustIncrement;
+		do {
+			newPos = Vector3.Lerp (startPos, endPos, adjust);
+			adjust += adjustIncrement;
+		} while(!InLegalLocation(newPos));
+		transform.position = newPos;
+		targetLocation = transform.position;
+	}
 }
